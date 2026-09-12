@@ -85,7 +85,7 @@ You should see `rule-index.json` and `rules-digest.md`. If they're not there, ru
 No npm publish needed. The package lives at the repo root, so omp can install straight from git:
 
 ```bash
-omp plugin install github:<your-github-user>/omp-project-rule-cache
+omp plugin install github:vocweb/omp-project-rule-cache
 ```
 
 ### Option B: install through a marketplace
@@ -94,7 +94,7 @@ Useful if you want in-app discovery, or if you're sharing the plugin with a team
 
 ```bash
 # Add the marketplace
-omp plugin marketplace add <your-github-user>/omp-project-rule-cache
+omp plugin marketplace add vocweb/omp-project-rule-cache
 
 # Install from it
 omp plugin install project-rule-cache@project-rule-cache-omp-plugins
@@ -103,7 +103,7 @@ omp plugin install project-rule-cache@project-rule-cache-omp-plugins
 From inside a running session, the equivalent is:
 
 ```
-/marketplace add <your-github-user>/omp-project-rule-cache
+/marketplace add vocweb/omp-project-rule-cache
 /marketplace install project-rule-cache@project-rule-cache-omp-plugins
 ```
 
@@ -112,7 +112,7 @@ From inside a running session, the equivalent is:
 Symlinks the plugin so your edits take effect without reinstalling:
 
 ```bash
-git clone https://github.com/<your-github-user>/omp-project-rule-cache
+git clone https://github.com/vocweb/omp-project-rule-cache
 omp plugin link ./omp-project-rule-cache
 ```
 
