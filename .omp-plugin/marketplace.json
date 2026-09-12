@@ -5,7 +5,7 @@
     {
       "name": "project-rule-cache",
       "description": "Project-scoped requirement/rule document cache for omp advisors",
-      "source": { "source": "github", "repo": "<github-user>/omp-project-rule-cache" }
+      "source": { "source": "github", "repo": "vocweb/omp-project-rule-cache" }
     }
   ]
 }
