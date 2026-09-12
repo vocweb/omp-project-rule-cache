@@ -1,0 +1,11 @@
+{
+  "name": "project-rule-cache-omp-plugins",
+  "owner": { "name": "Tien Chu" },
+  "plugins": [
+    {
+      "name": "project-rule-cache",
+      "description": "Project-scoped requirement/rule document cache for omp advisors",
+      "source": { "source": "github", "repo": "<github-user>/omp-project-rule-cache" }
+    }
+  ]
+}
