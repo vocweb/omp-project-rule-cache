@@ -1,6 +1,6 @@
 {
   "name": "omp-project-rule-cache",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Project-configurable requirement/rule document cache + lookup tool for omp advisors",
   "keywords": ["omp-plugin"],
   "main": "index.ts",

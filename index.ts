@@ -39,6 +39,18 @@ const CANDIDATE_DOC_DIRS = [
 // plugin is a legitimate answer, and repeating the message every session would punish it.
 const HINT_MARKER_FILE = ".omp/cache/.init-hint-shown";
 
+// Stable key for the footer/status-bar indicator that surfaces when a configured
+// source path does not resolve under the project root. A stable key lets every call
+// site replace or clear this one indicator without touching any other extension's
+// status text — in particular, clearing it (passing undefined) when a later build
+// finds no missing paths is what removes a now-stale warning instead of leaving it
+// sitting in the transcript after the user has already fixed the path.
+const MISSING_SOURCES_STATUS_KEY = "rule-cache:missing-sources";
+
+// Shared wording so the rebuild and configure call sites can never drift into
+// describing the same missing-path condition with different text.
+const MISSING_SOURCES_STATUS_PREFIX = "rule-cache: missing source path(s): ";
+
 interface ProjectConfig {
   sources: string[];
   headingPattern?: string;
@@ -106,13 +118,20 @@ function markHintShown(cwd: string): void {
   }
 }
 
+// Single source of truth for writing the config, so every command that touches
+// .omp/project-rule-cache.json produces the same JSON shape (2-space indent, trailing
+// newline) instead of each hand-rolling its own serialization.
+function writeProjectConfig(cwd: string, config: ProjectConfig): string {
+  const path = join(cwd, PROJECT_CONFIG_FILE);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
+  return path;
+}
+
 // Writes the config rather than just describing it, because the alternative is the user
 // hand-copying a JSON snippet from a warning message — a step that adds nothing but typos.
 function scaffoldConfig(cwd: string, sources: string[]): string {
-  const path = join(cwd, PROJECT_CONFIG_FILE);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify({ sources }, null, 2) + "\n");
-  return path;
+  return writeProjectConfig(cwd, { sources });
 }
 
 function resolveSourceFiles(cwd: string, sources: string[]): string[] {
@@ -348,9 +367,16 @@ export default function (pi: ExtensionAPI) {
       // staleness check, so consulting it here would defeat the command.
       const fresh = buildCache(ctx.cwd, config);
       persistCache(ctx.cwd, fresh);
+      // Re-validated on every rebuild so fixing a bad path and rebuilding clears the
+      // stale warning instead of leaving it in the footer after the fix.
+      const missing = config.sources.filter((s) => !existsSync(join(ctx.cwd, s)));
+      ctx.ui.setStatus(MISSING_SOURCES_STATUS_KEY, missing.length > 0 ? MISSING_SOURCES_STATUS_PREFIX + missing.join(", ") : undefined);
       // The rule count is the only quick signal that the heading pattern actually matched;
       // a count of 0 points straight at a pattern mismatch.
-      ctx.ui.notify(`Rebuilt: ${Object.keys(fresh.rules).length} rules.`, "info");
+      ctx.ui.notify(
+        `Rebuilt: ${Object.keys(fresh.rules).length} rules.` + (missing.length > 0 ? ` Warning: missing source path(s): ${missing.join(", ")}.` : ""),
+        missing.length > 0 ? "warning" : "info",
+      );
     },
   });
 
@@ -389,6 +415,96 @@ export default function (pi: ExtensionAPI) {
         count > 0
           ? `Created ${path} (sources: ${sources.join(", ")}) — indexed ${count} rules.`
           : `Created ${path}, but matched 0 rules. Check that headings look like "## <RULE-ID>", or set headingPattern.`,
+        count > 0 ? "info" : "warning",
+      );
+    },
+  });
+
+  // Editing the JSON by hand means knowing the file location, the exact key name, and
+  // how to write a valid array — three chances to typo something that then fails
+  // silently at the next session start. This turns changing which folders feed the
+  // index into answering one multi-line prompt, with the paths that are already
+  // configured shown back instead of the raw file.
+  pi.registerCommand("rule-cache-configure", {
+    description: "View or change the source folders/files in .omp/project-rule-cache.json",
+    handler: async (_args, ctx) => {
+      // The multi-line editor is a TUI-only surface; headless modes (print, RPC) have
+      // nowhere to render it, so there is no meaningful fallback to offer here.
+      if (!ctx.hasUI) {
+        ctx.ui.notify(`/rule-cache-configure requires an interactive session. Edit ${PROJECT_CONFIG_FILE} directly instead.`, "warning");
+        return;
+      }
+
+      const existing = loadProjectConfig(ctx.cwd);
+      const hadInvalidConfig = !existing && configFileExists(ctx.cwd);
+
+      // Prefilled with the paths already configured, one per line — never the raw JSON.
+      // An empty prefill is exactly the "no config yet" case: the user just types paths
+      // into a blank prompt.
+      const prefill = existing ? existing.sources.join("\n") : "";
+
+      ctx.ui.notify(
+        "Enter one path per line, relative to the project root (e.g. docs/project/). " +
+          "Enter inserts a new line; press Ctrl+Enter (or Ctrl+Q if your terminal can't send Ctrl+Enter) to save, Esc to cancel.",
+        "info",
+      );
+      const raw = await ctx.ui.editor(
+        "Rule cache sources (one path per line, relative to project root)",
+        prefill,
+        { helpText: "Ctrl+Enter / Ctrl+Q to save · Esc to cancel" },
+      );
+
+      // undefined means Esc: leave the file exactly as it was.
+      if (raw === undefined) {
+        ctx.ui.notify("Cancelled — no changes made.", "info");
+        return;
+      }
+
+      // Blank lines are formatting, not content. Duplicates collapse to their first
+      // occurrence so a stray paste does not silently double an entry in the index.
+      const seen = new Set<string>();
+      const sources: string[] = [];
+      for (const line of raw.split("\n")) {
+        const src = line.trim();
+        if (!src || seen.has(src)) continue;
+        seen.add(src);
+        sources.push(src);
+      }
+
+      if (sources.length === 0) {
+        ctx.ui.notify(
+          `No paths entered — ${PROJECT_CONFIG_FILE} was not changed. Add at least one path, or delete the file directly to remove configuration.`,
+          "warning",
+        );
+        return;
+      }
+
+      // Resolved the same way the indexer resolves them, so a typo is caught here
+      // instead of silently producing an empty index at the next session start. The
+      // status key is set or cleared here too — fixing the path and saving again is
+      // exactly the case that must remove a stale warning, not just stop repeating it.
+      const missing = sources.filter((s) => !existsSync(join(ctx.cwd, s)));
+      ctx.ui.setStatus(MISSING_SOURCES_STATUS_KEY, missing.length > 0 ? MISSING_SOURCES_STATUS_PREFIX + missing.join(", ") : undefined);
+      if (missing.length > 0) {
+        ctx.ui.notify(
+          `Warning: these paths do not exist under the project root and will be skipped until they do: ${missing.join(", ")}`,
+          "warning",
+        );
+      }
+
+      // headingPattern is preserved rather than reconstructed: this command only ever
+      // edits sources, and a project that customized the regex should not lose it just
+      // because it changed a folder.
+      const config: ProjectConfig = existing?.headingPattern ? { sources, headingPattern: existing.headingPattern } : { sources };
+      const path = writeProjectConfig(ctx.cwd, config);
+
+      const fresh = buildCache(ctx.cwd, config);
+      persistCache(ctx.cwd, fresh);
+      const count = Object.keys(fresh.rules).length;
+
+      ctx.ui.notify(
+        `Saved ${path} (${sources.length} source${sources.length === 1 ? "" : "s"}) — indexed ${count} rules.` +
+          (hadInvalidConfig ? " Replaced a previously invalid config." : ""),
         count > 0 ? "info" : "warning",
       );
     },
