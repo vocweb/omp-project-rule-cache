@@ -136,7 +136,7 @@ If you already had a session open, reload it:
 
 ## Per-project setup
 
-Create `.omp/project-rule-cache.json` in the project root.
+Create `.omp/project-rule-cache.json` in the project root — either by hand as shown below, or by running `/rule-cache-configure` inside a session, which prompts for one path per line (relative to the project root) and writes the file for you.
 
 Minimal: point at a directory, and every `.md` file in it gets indexed.
 
@@ -303,6 +303,7 @@ The session-start build exists because advisors can't trigger one themselves: th
 |---|---|---|
 | `project_rule_lookup` | tool | `project_rule_lookup(ruleId: string)`: returns the rule's text and `file:line-range`, or a not-found message. Available to the main agent and subagents, not advisors. |
 | `/rule-cache-rebuild` | command | Rebuilds the index and the digest for the current project, and reports the rule count. |
+| `/rule-cache-configure` | command | Interactively view or change the `sources` in `.omp/project-rule-cache.json`, without hand-editing JSON. Shows the currently configured paths (not the raw file) pre-filled in a multi-line editor — one path per line, relative to the project root. Enter inserts a new line; press Ctrl+Enter (or Ctrl+Q, for terminals that can't send Ctrl+Enter) to save, Esc to cancel. Warns about any entered path that doesn't exist, but still saves and rebuilds the index. |
 
 Generated files:
 
